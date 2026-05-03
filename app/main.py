@@ -358,7 +358,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     "created_at": datetime.now()
                 }
                 
-                cbr_rate = cbr_service.get_all_rates().get(pair, 0)
+                cbr_rates = await cbr_service.get_all_rates()
+                cbr_rate = cbr_rates.get(pair, 0)
                 suggested_price = pricing_service.calculate_suggested_price(cbr_rate, side)
                 
                 await manager.broadcast_to_treasury({
