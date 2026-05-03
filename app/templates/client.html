@@ -138,6 +138,11 @@
         
         <form id="rfqForm">
             <div class="form-group">
+                <label for="clientName">Ваше имя / Компания</label>
+                <input type="text" id="clientName" placeholder="Например: ООО Рога и Копыта" required>
+            </div>
+            
+            <div class="form-group">
                 <label for="pair">Валютная пара</label>
                 <select id="pair" required>
                     <!-- Заполняется динамически из API -->
@@ -235,8 +240,18 @@
         document.getElementById('rfqForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const clientName = document.getElementById('clientName').value.trim();
+            if (!clientName) {
+                showStatus('Введите ваше имя', 'error');
+                return;
+            }
+            
+            // Сохраняем имя клиента в sessionStorage для последующих запросов
+            sessionStorage.setItem('clientName', clientName);
+            
             const rfqData = {
                 type: 'new_rfq',
+                client_name: clientName,
                 pair: document.getElementById('pair').value,
                 side: document.getElementById('side').value,
                 amount: parseFloat(document.getElementById('amount').value)

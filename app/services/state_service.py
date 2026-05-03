@@ -89,19 +89,25 @@ class StateService:
                 for row in rows:
                     pair, amount, side, price = row
                     
-                    if side == 'BUY_FROM_CLIENT':
-                        current_amt = self.positions[pair]["amount"]
-                        current_price = self.positions[pair]["avg_entry_price"]
-                        
-                        new_amt = current_amt + amount
-                        if new_amt != 0:
-                            total_val = (current_price * current_amt) + (price * amount)
-                            self.positions[pair]["avg_entry_price"] = total_val / new_amt
-                        
-                        self.positions[pair]["amount"] = new_amt
-                        
-                    elif side == 'SELL_TO_CLIENT':
-                        self.positions[pair]["amount"] -= amount
+                    try:
+                        if side == 'BUY_FROM_CLIENT':
+                            current_amt = self.positions[pair]["amount"]
+                            current_price = self.positions[pair]["avg_entry_price"]
+                            
+                            new_amt = current_amt + amount
+                            if new_amt != 0:
+                                total_val = (current_price * current_amt) + (price * amount)
+                                self.positions[pair]["avg_entry_price"] = total_val / new_amt
+                            
+                            self.positions[pair]["amount"] = new_amt
+                            
+                        elif side == 'SELL_TO_CLIENT':
+                            self.positions[pair]["amount"] -= amount
+                            
+                    except KeyError:
+                        # Пара не найдена в конфигурации - пропускаем с предупреждением
+                        print(f"⚠️  Warning: Unknown currency pair '{pair}' in deal history. Skipping...")
+                        continue
         
         # Сохраняем пересчитанное состояние в таблицу positions
         await self.save_positions_to_db()
