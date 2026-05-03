@@ -279,9 +279,13 @@
         function acceptQuote() {
             if (!currentQuote) return;
             
+            // Получаем имя клиента из sessionStorage
+            const clientName = sessionStorage.getItem('clientName') || 'Неизвестный клиент';
+            
             ws.send(JSON.stringify({
                 type: 'accept_deal',
                 rfq_id: currentQuote.rfq_id,
+                client_name: clientName,
                 pair: currentQuote.pair,
                 amount: currentQuote.amount,
                 price: currentQuote.price,
