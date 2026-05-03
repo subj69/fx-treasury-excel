@@ -309,7 +309,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         if is_treasury:
             # 🔥 Отправляем полное состояние казначею
-            cbr_rates = cbr_service.get_all_rates()
+            cbr_rates = await cbr_service.get_all_rates()
             history = await state_service.get_deal_history(50)
             
             print(f"📤 Sending init_state to treasury")
