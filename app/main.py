@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
@@ -10,12 +10,24 @@ from app.services.state_service import StateService
 from app.services.cbr_service import CBRService
 import json
 import uuid
+import asyncio
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+import io
+import csv
 
 settings = get_settings()
 pricing_service = PricingService()
 risk_service = RiskService()
 state_service = StateService()
 cbr_service = CBRService()
+
+# 🔥 Кэширование HTML шаблонов для производительности
+@lru_cache(maxsize=2)
+def get_cached_template(template_name: str) -> str:
+    """Кэширует HTML шаблоны в памяти"""
+    with open(f"app/templates/{template_name}", encoding="utf-8") as f:
+        return f.read()
 
 app = FastAPI(title="FX Treasury System", version="0.1.0")
 
@@ -88,175 +100,201 @@ async def startup_event():
 async def shutdown_event():
     print("💾 Saving positions before shutdown...")
     await state_service.save_positions_to_db()
+    await state_service.cleanup()
 
 @app.get("/")
 async def root():
-    return HTMLResponse(open("app/templates/client.html", encoding="utf-8").read())
+    return HTMLResponse(get_cached_template("client.html"))
 
 @app.get("/treasury")
 async def treasury_page(username: str = Depends(verify_treasury_credentials)):
-    return HTMLResponse(open("app/templates/treasury.html", encoding="utf-8").read())
+    return HTMLResponse(get_cached_template("treasury.html"))
 
 
 
 @app.get("/export/deals")
 async def export_deals(
     username: str = Depends(verify_treasury_credentials),
-    format: str = "xlsx"  # xlsx или csv
+    format: str = "xlsx",  # xlsx или csv
+    chunk_size: int = 1000  # 🔥 Размер порции для пагинации
 ):
-    """Экспорт всех сделок в Excel (XLSX) или CSV"""
+    """🔥 Оптимизированный экспорт сделок с пагинацией и асинхронной обработкой"""
     print(f"📤 Export requested by: {username}, format: {format}")
     
     try:
-        # Получаем ВСЕ сделки
-        history = await state_service.get_deal_history(limit=100000)
-        print(f"📊 Found {len(history)} deals for export")
+        # 🔥 Получаем общее количество сделок для прогресса
+        total_deals = await state_service.count_deals()
+        print(f"📊 Total deals to export: {total_deals}")
         
         if format.lower() == "xlsx":
-            # 🔥 ЭКСПОРТ В EXCEL (XLSX)
-            from openpyxl import Workbook
-            from openpyxl.styles import Font, PatternFill, Alignment
-            from openpyxl.utils import get_column_letter
-            
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Сделки"
-            
-            # Заголовки
-            headers = [
-                "ID", "Дата", "Время", "Пара", "Тип операции", 
-                "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)"
-            ]
-            ws.append(headers)
-            
-            # Стилизация заголовков
-            header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-            header_font = Font(bold=True, color="FFFFFF")
-            
-            for cell in ws[1]:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal="center")
-                # Автоширина столбца
-                col_letter = get_column_letter(cell.column)
-                ws.column_dimensions[col_letter].width = 15
-            
-            # Данные
-            for deal in history:
-                timestamp = deal.get('timestamp', '')
-                if 'T' in timestamp:
-                    date_part, time_part = timestamp.split('T')
-                    time_part = time_part.split('.')[0]
-                else:
-                    date_part = timestamp[:10] if len(timestamp) >= 10 else ''
-                    time_part = timestamp[11:19] if len(timestamp) > 11 else ''
-                
-                side_raw = deal.get('side', '')
-                side_ru = "ПРОДАЖА клиенту" if side_raw == 'SELL_TO_CLIENT' else "ПОКУПКА у клиента"
-                
-                # P/L для цветовой индикации
-                pl_value = deal.get('realized_pl', 0)
-                
-                ws.append([
-                    deal.get('id', ''),
-                    date_part,
-                    time_part,
-                    deal.get('pair', ''),
-                    side_ru,
-                    deal.get('amount', 0),
-                    deal.get('price', 0),
-                    deal.get('cbr_rate', 0),
-                    pl_value
-                ])
-                
-                # Цветовая индикация P/L (последний столбец)
-                last_cell = ws.cell(row=ws.max_row, column=9)
-                if pl_value > 0:
-                    last_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")  # Зелёный
-                    last_cell.font = Font(color="006100", bold=True)
-                elif pl_value < 0:
-                    last_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")  # Красный
-                    last_cell.font = Font(color="9C0006", bold=True)
-            
-            # Форматирование чисел
-            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=6, max_col=9):
-                for cell in row:
-                    if cell.column == 6:  # Объём
-                        cell.number_format = '#,##0.00'
-                    elif cell.column in [7, 8]:  # Курсы
-                        cell.number_format = '0.0000'
-                    elif cell.column == 9:  # P/L
-                        cell.number_format = '#,##0.00'
-            
-            # Сохраняем в bytes
-            from io import BytesIO
-            output = BytesIO()
-            wb.save(output)
-            output.seek(0)
-            
-            filename = f"deals_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            print(f"✅ Excel export successful: {filename} ({len(history)} deals)")
-            
-            from fastapi.responses import StreamingResponse
-            return StreamingResponse(
-                iter([output.getvalue()]),
-                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={
-                    "Content-Disposition": f"attachment; filename={filename}"
-                }
-            )
-        
+            return await _export_xlsx_optimized(total_deals, chunk_size)
         else:
-            # CSV (оставляем как запасной вариант)
-            output = io.StringIO()
-            output.write('\ufeff')  # BOM для Excel
-            
-            writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
-            writer.writerow([
-                "ID", "Дата", "Время", "Пара", "Тип операции", 
-                "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)"
-            ])
-            
-            for deal in history:
-                timestamp = deal.get('timestamp', '')
-                if 'T' in timestamp:
-                    date_part, time_part = timestamp.split('T')
-                    time_part = time_part.split('.')[0]
-                else:
-                    date_part = timestamp[:10] if len(timestamp) >= 10 else ''
-                    time_part = timestamp[11:19] if len(timestamp) > 11 else ''
-                
-                side_raw = deal.get('side', '')
-                side_ru = "ПРОДАЖА клиенту" if side_raw == 'SELL_TO_CLIENT' else "ПОКУПКА у клиента"
-                
-                writer.writerow([
-                    deal.get('id', ''),
-                    date_part,
-                    time_part,
-                    deal.get('pair', ''),
-                    side_ru,
-                    f"{deal.get('amount', 0):.2f}",
-                    f"{deal.get('price', 0):.4f}",
-                    f"{deal.get('cbr_rate', 0):.4f}",
-                    f"{deal.get('realized_pl', 0):.2f}"
-                ])
-            
-            output.seek(0)
-            filename = f"deals_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            
-            return StreamingResponse(
-                iter([output.getvalue()]),
-                media_type="text/csv; charset=utf-8",
-                headers={
-                    "Content-Disposition": f"attachment; filename={filename}"
-                }
-            )
+            return await _export_csv_optimized(total_deals, chunk_size)
     
     except Exception as e:
         print(f"❌ Export error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Export error: {str(e)}")
+
+
+async def _export_xlsx_optimized(total_deals: int, chunk_size: int):
+    """🔥 Асинхронный экспорт в XLSX с использованием ThreadPoolExecutor"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from io import BytesIO
+    
+    # 🔥 Создаем Workbook в отдельном потоке (openpyxl синхронный)
+    loop = asyncio.get_event_loop()
+    wb = await loop.run_in_executor(None, lambda: Workbook())
+    ws = wb.active
+    ws.title = "Сделки"
+    
+    # Заголовки
+    headers = [
+        "ID", "Дата", "Время", "Пара", "Тип операции", 
+        "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)"
+    ]
+    ws.append(headers)
+    
+    # Стилизация заголовков
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        col_letter = get_column_letter(cell.column)
+        ws.column_dimensions[col_letter].width = 15
+    
+    # 🔥 Пагинация: загружаем данные порциями
+    offset = 0
+    row_num = 2  # Начинаем после заголовков
+    
+    while True:
+        deals = await state_service.get_all_deals_batch(offset=offset, batch_size=chunk_size)
+        if not deals:
+            break
+        
+        for deal in deals:
+            timestamp = deal.get('timestamp', '')
+            if 'T' in timestamp:
+                date_part, time_part = timestamp.split('T')
+                time_part = time_part.split('.')[0]
+            else:
+                date_part = timestamp[:10] if len(timestamp) >= 10 else ''
+                time_part = timestamp[11:19] if len(timestamp) > 11 else ''
+            
+            side_raw = deal.get('side', '')
+            side_ru = "ПРОДАЖА клиенту" if side_raw == 'SELL_TO_CLIENT' else "ПОКУПКА у клиента"
+            
+            pl_value = deal.get('realized_pl', 0)
+            
+            ws.append([
+                deal.get('id', ''),
+                date_part,
+                time_part,
+                deal.get('pair', ''),
+                side_ru,
+                deal.get('amount', 0),
+                deal.get('price', 0),
+                deal.get('cbr_rate', 0),
+                pl_value
+            ])
+            
+            # Цветовая индикация P/L
+            last_cell = ws.cell(row=row_num, column=9)
+            if pl_value > 0:
+                last_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                last_cell.font = Font(color="006100", bold=True)
+            elif pl_value < 0:
+                last_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                last_cell.font = Font(color="9C0006", bold=True)
+            
+            row_num += 1
+        
+        offset += chunk_size
+        print(f"📊 Processed {min(offset, total_deals)}/{total_deals} deals")
+    
+    # Форматирование чисел
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=6, max_col=9):
+        for cell in row:
+            if cell.column == 6:
+                cell.number_format = '#,##0.00'
+            elif cell.column in [7, 8]:
+                cell.number_format = '0.0000'
+            elif cell.column == 9:
+                cell.number_format = '#,##0.00'
+    
+    # Сохраняем в bytes через ThreadPoolExecutor
+    output = BytesIO()
+    await loop.run_in_executor(None, lambda: wb.save(output))
+    output.seek(0)
+    
+    filename = f"deals_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    print(f"✅ Excel export successful: {filename} ({total_deals} deals)")
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+async def _export_csv_optimized(total_deals: int, chunk_size: int):
+    """🔥 Асинхронный экспорт в CSV с пагинацией"""
+    output = io.StringIO()
+    output.write('\ufeff')  # BOM для Excel
+    
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "ID", "Дата", "Время", "Пара", "Тип операции", 
+        "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)"
+    ])
+    
+    offset = 0
+    while True:
+        deals = await state_service.get_all_deals_batch(offset=offset, batch_size=chunk_size)
+        if not deals:
+            break
+        
+        for deal in deals:
+            timestamp = deal.get('timestamp', '')
+            if 'T' in timestamp:
+                date_part, time_part = timestamp.split('T')
+                time_part = time_part.split('.')[0]
+            else:
+                date_part = timestamp[:10] if len(timestamp) >= 10 else ''
+                time_part = timestamp[11:19] if len(timestamp) > 11 else ''
+            
+            side_raw = deal.get('side', '')
+            side_ru = "ПРОДАЖА клиенту" if side_raw == 'SELL_TO_CLIENT' else "ПОКУПКА у клиента"
+            
+            writer.writerow([
+                deal.get('id', ''),
+                date_part,
+                time_part,
+                deal.get('pair', ''),
+                side_ru,
+                f"{deal.get('amount', 0):.2f}",
+                f"{deal.get('price', 0):.4f}",
+                f"{deal.get('cbr_rate', 0):.4f}",
+                f"{deal.get('realized_pl', 0):.2f}"
+            ])
+        
+        offset += chunk_size
+        print(f"📊 Processed {min(offset, total_deals)}/{total_deals} deals")
+    
+    output.seek(0)
+    filename = f"deals_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 @app.websocket("/ws")
