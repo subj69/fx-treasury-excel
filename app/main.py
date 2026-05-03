@@ -353,6 +353,7 @@ async def websocket_endpoint(websocket: WebSocket):
             
             if req_type == 'new_rfq':
                 rfq_id = data.get('rfq_id', str(uuid.uuid4())[:8])
+                client_name = data.get('client_name', 'Аноним')
                 amount = float(data['amount'])
                 pair = data['pair']
                 side = data['side']
@@ -373,6 +374,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast_to_treasury({
                     'type': 'incoming_rfq',
                     'rfq_id': rfq_id,
+                    'client_name': client_name,
                     'pair': pair,
                     'amount': amount,
                     'side': side,
@@ -382,7 +384,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     'suggested_price': suggested_price,
                     'risk_warning': risk_check.get('message') if not risk_check['ok'] else None
                 })
-                print("✅ RFQ broadcasted to treasury")
+                print(f"✅ RFQ broadcasted to treasury from client: {client_name}")
             
             elif req_type == 'treasury_answer':
                 rfq_id = data['rfq_id']
