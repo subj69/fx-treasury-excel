@@ -249,14 +249,7 @@
         <div class="panel">
             <h2>📊 Курсы ЦБ РФ</h2>
             <div class="cbr-rates" id="cbrRates">
-                <div class="cbr-rate-item">
-                    <span>USD/RUB</span>
-                    <span class="rate-value" id="cbrUsd">--</span>
-                </div>
-                <div class="cbr-rate-item">
-                    <span>EUR/RUB</span>
-                    <span class="rate-value" id="cbrEur">--</span>
-                </div>
+                <!-- Динамически заполняется через JS -->
             </div>
             
             <h2>📥 Входящие заявки (RFQ)</h2>
@@ -266,14 +259,7 @@
             
             <h2>📈 Позиции</h2>
             <div id="positionsList">
-                <div class="position-item">
-                    <span>USD/RUB</span>
-                    <span id="posUsd" class="position-positive">0.00</span>
-                </div>
-                <div class="position-item">
-                    <span>EUR/RUB</span>
-                    <span id="posEur" class="position-positive">0.00</span>
-                </div>
+                <!-- Динамически заполняется через JS -->
             </div>
         </div>
         
@@ -407,27 +393,35 @@
         function updatePositions(pos) {
             if (!pos) return;
             
-            if (pos['USD/RUB']) {
-                const usdAmount = pos['USD/RUB'].amount;
-                const posUsd = document.getElementById('posUsd');
-                posUsd.textContent = usdAmount.toFixed(2);
-                posUsd.className = usdAmount >= 0 ? 'position-positive' : 'position-negative';
-            }
-            if (pos['EUR/RUB']) {
-                const eurAmount = pos['EUR/RUB'].amount;
-                const posEur = document.getElementById('posEur');
-                posEur.textContent = eurAmount.toFixed(2);
-                posEur.className = eurAmount >= 0 ? 'position-positive' : 'position-negative';
+            const positionsList = document.getElementById('positionsList');
+            positionsList.innerHTML = '';
+            
+            for (const [pair, data] of Object.entries(pos)) {
+                const item = document.createElement('div');
+                item.className = 'position-item';
+                const amount = data.amount || 0;
+                const className = amount >= 0 ? 'position-positive' : 'position-negative';
+                item.innerHTML = `
+                    <span>${pair}</span>
+                    <span class="${className}">${amount.toFixed(2)}</span>
+                `;
+                positionsList.appendChild(item);
             }
         }
         
         // Функция обновления курсов ЦБ
         function updateCBRRates() {
-            if (cbrRates['USD/RUB']) {
-                document.getElementById('cbrUsd').textContent = cbrRates['USD/RUB'].toFixed(4);
-            }
-            if (cbrRates['EUR/RUB']) {
-                document.getElementById('cbrEur').textContent = cbrRates['EUR/RUB'].toFixed(4);
+            const cbrRatesEl = document.getElementById('cbrRates');
+            cbrRatesEl.innerHTML = '';
+            
+            for (const [pair, rate] of Object.entries(cbrRates)) {
+                const item = document.createElement('div');
+                item.className = 'cbr-rate-item';
+                item.innerHTML = `
+                    <span>${pair}</span>
+                    <span class="rate-value">${rate.toFixed(4)}</span>
+                `;
+                cbrRatesEl.appendChild(item);
             }
         }
         
