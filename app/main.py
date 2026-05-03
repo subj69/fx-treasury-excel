@@ -406,12 +406,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 amount = float(data['amount'])
                 price = float(data['price'])
                 side = data['side']
+                client_name = data.get('client_name', 'Неизвестный клиент')
                 
                 cbr_rate = await cbr_service.get_rate(pair.replace('/RUB', '')) or 0
                 pl = pricing_service.calculate_deal_pl(amount, price, cbr_rate, side)
                 
                 state_service.update_position(pair, amount, side, price)
-                await state_service.save_deal(pair, amount, price, side, cbr_rate, pl)
+                await state_service.save_deal(pair, amount, price, side, cbr_rate, pl, client_name)
                 await state_service.save_positions_to_db()  # 🔥 Сохраняем сразу
                 
                 if data.get('rfq_id') in pending_rfqs:
@@ -423,7 +424,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     'deal': {
                         'pair': pair, 'amount': amount, 'price': price,
                         'side': side, 'cbr': cbr_rate, 'pl': pl,
-                        'time': datetime.now().strftime("%H:%M:%S")
+                        'time': datetime.now().strftime("%H:%M:%S"),
+                        'client_name': client_name
                     }
                 })
                 await websocket.send_json({

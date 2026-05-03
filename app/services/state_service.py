@@ -42,7 +42,8 @@ class StateService:
                     price REAL NOT NULL,
                     side TEXT NOT NULL,
                     cbr_rate REAL NOT NULL,
-                    realized_pl REAL DEFAULT 0
+                    realized_pl REAL DEFAULT 0,
+                    client_name TEXT DEFAULT 'Неизвестный клиент'
                 )
             ''')
             # 🔥 Индексы для ускорения запросов
@@ -141,12 +142,12 @@ class StateService:
         current["amount"] = new_amount
 
     async def save_deal(self, pair: str, amount: float, price: float, 
-                       side: str, cbr_rate: float, pl: float):
+                       side: str, cbr_rate: float, pl: float, client_name: str = 'Неизвестный клиент'):
         async with self.get_connection() as db:
             await db.execute('''
-                INSERT INTO deals (timestamp, pair, amount, price, side, cbr_rate, realized_pl)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (datetime.now().isoformat(), pair, amount, price, side, cbr_rate, pl))
+                INSERT INTO deals (timestamp, pair, amount, price, side, cbr_rate, realized_pl, client_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (datetime.now().isoformat(), pair, amount, price, side, cbr_rate, pl, client_name))
             await db.commit()
 
     async def get_deal_history(self, limit: int = 50):

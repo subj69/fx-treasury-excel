@@ -273,6 +273,7 @@
                         <th>Время</th>
                         <th>Пара</th>
                         <th>Тип</th>
+                        <th>Клиент</th>
                         <th>Объём</th>
                         <th>Курс</th>
                         <th>ЦБ</th>
@@ -551,12 +552,14 @@
             const badgeText = deal.side === 'SELL_TO_CLIENT' ? 'ПРОДАЖА' : 'ПОКУПКА';
             const plColor = deal.pl >= 0 ? '#a6e3a1' : '#f38ba8';
             const plSign = deal.pl >= 0 ? '+' : '';
+            const clientName = deal.client_name || 'Неизвестный клиент';
             
             row.innerHTML = `
                 <td style="color: #89b4fa; font-weight: 500">${datePart}</td>
                 <td>${timePart}</td>
                 <td><strong>${deal.pair}</strong></td>
                 <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+                <td style="color: #bac2de">${clientName}</td>
                 <td>${Number(deal.amount).toLocaleString('ru-RU')}</td>
                 <td>${deal.price?.toFixed(4) || '--'}</td>
                 <td style="color: #89b4fa">${deal.cbr?.toFixed(4) || '--'}</td>
