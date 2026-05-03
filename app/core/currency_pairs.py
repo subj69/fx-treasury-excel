@@ -59,6 +59,16 @@ SUPPORTED_PAIRS: dict[str, CurrencyPairConfig] = {
         "spread_buy": 0.008,  # Чуть больший спред для менее ликвидной валюты
         "spread_sell": 0.008,
     },
+    # ✅ Новая валютная пара TRY/RUB
+    "TRY/RUB": {
+        "symbol": "TRY",
+        "name": "Турецкая лира",
+        "default_limit": 1_000_000,  # Юаней больше из-за меньшего курса
+        "min_amount": 1000,
+        "max_amount": 10_000_000,
+        "spread_buy": 0.008,  # Чуть больший спред для менее ликвидной валюты
+        "spread_sell": 0.008,
+    },
 }
 
 
