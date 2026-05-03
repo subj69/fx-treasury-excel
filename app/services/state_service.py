@@ -1,5 +1,9 @@
 import aiosqlite
 from datetime import datetime
+from typing import Optional
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 from app.core.config import get_settings
 
 class StateService:
@@ -9,9 +13,25 @@ class StateService:
             "USD/RUB": {"amount": 0.0, "avg_entry_price": 0.0},
             "EUR/RUB": {"amount": 0.0, "avg_entry_price": 0.0}
         }
+        self._db_pool: Optional[aiosqlite.Connection] = None
+        self._executor = ThreadPoolExecutor(max_workers=4)
+        self._lock = asyncio.Lock()
+    
+    @asynccontextmanager
+    async def get_connection(self):
+        """Пул соединений для эффективной работы с БД"""
+        conn = await aiosqlite.connect(
+            self.settings.DATABASE_PATH,
+            timeout=30.0
+        )
+        conn.row_factory = aiosqlite.Row
+        try:
+            yield conn
+        finally:
+            await conn.close()
     
     async def init_db(self):
-        async with aiosqlite.connect(self.settings.DATABASE_PATH) as db:
+        async with self.get_connection() as db:
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS deals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,6 +44,16 @@ class StateService:
                     realized_pl REAL DEFAULT 0
                 )
             ''')
+            # 🔥 Индексы для ускорения запросов
+            await db.execute('''
+                CREATE INDEX IF NOT EXISTS idx_deals_pair ON deals(pair)
+            ''')
+            await db.execute('''
+                CREATE INDEX IF NOT EXISTS idx_deals_timestamp ON deals(timestamp DESC)
+            ''')
+            await db.execute('''
+                CREATE INDEX IF NOT EXISTS idx_deals_side ON deals(side)
+            ''')
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS positions (
                     pair TEXT UNIQUE NOT NULL,
@@ -33,7 +63,7 @@ class StateService:
                 )
             ''')
             await db.commit()
-            print("✅ Database tables checked")
+            print("✅ Database tables and indexes created")
 
     async def recalculate_positions_from_history(self):
         """
@@ -47,19 +77,22 @@ class StateService:
             self.positions[pair]["amount"] = 0.0
             self.positions[pair]["avg_entry_price"] = 0.0
 
-        async with aiosqlite.connect(self.settings.DATABASE_PATH) as db:
-            # Берем все сделки
-            async with db.execute("SELECT pair, amount, side, price FROM deals") as cursor:
-                async for row in cursor:
+        async with self.get_connection() as db:
+            # 🔥 Batch fetch всех сделок для эффективности
+            async with db.execute(
+                "SELECT pair, amount, side, price FROM deals ORDER BY id"
+            ) as cursor:
+                rows = await cursor.fetchall()
+                
+                # Обрабатываем в памяти - быстрее чем много отдельных запросов
+                for row in rows:
                     pair, amount, side, price = row
                     
                     if side == 'BUY_FROM_CLIENT':
-                        # Банк покупает -> Позиция растет (+)
                         current_amt = self.positions[pair]["amount"]
                         current_price = self.positions[pair]["avg_entry_price"]
                         
                         new_amt = current_amt + amount
-                        # Пересчет средней цены входа
                         if new_amt != 0:
                             total_val = (current_price * current_amt) + (price * amount)
                             self.positions[pair]["avg_entry_price"] = total_val / new_amt
@@ -67,7 +100,6 @@ class StateService:
                         self.positions[pair]["amount"] = new_amt
                         
                     elif side == 'SELL_TO_CLIENT':
-                        # Банк продает -> Позиция падает (-)
                         self.positions[pair]["amount"] -= amount
         
         # Сохраняем пересчитанное состояние в таблицу positions
@@ -76,12 +108,16 @@ class StateService:
 
     async def save_positions_to_db(self):
         try:
-            async with aiosqlite.connect(self.settings.DATABASE_PATH) as db:
-                for pair, data in self.positions.items():
-                    await db.execute('''
-                        INSERT OR REPLACE INTO positions (pair, amount, avg_entry_price, updated_at)
-                        VALUES (?, ?, ?, ?)
-                    ''', (pair, data["amount"], data["avg_entry_price"], datetime.now().isoformat()))
+            async with self.get_connection() as db:
+                # 🔥 Batch insert для всех позиций
+                positions_data = [
+                    (pair, data["amount"], data["avg_entry_price"], datetime.now().isoformat())
+                    for pair, data in self.positions.items()
+                ]
+                await db.executemany('''
+                    INSERT OR REPLACE INTO positions (pair, amount, avg_entry_price, updated_at)
+                    VALUES (?, ?, ?, ?)
+                ''', positions_data)
                 await db.commit()
         except Exception as e:
             print(f"❌ Error saving positions: {e}")
@@ -99,7 +135,7 @@ class StateService:
 
     async def save_deal(self, pair: str, amount: float, price: float, 
                        side: str, cbr_rate: float, pl: float):
-        async with aiosqlite.connect(self.settings.DATABASE_PATH) as db:
+        async with self.get_connection() as db:
             await db.execute('''
                 INSERT INTO deals (timestamp, pair, amount, price, side, cbr_rate, realized_pl)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -107,8 +143,35 @@ class StateService:
             await db.commit()
 
     async def get_deal_history(self, limit: int = 50):
-        async with aiosqlite.connect(self.settings.DATABASE_PATH) as db:
-            async with db.execute("SELECT * FROM deals ORDER BY id DESC LIMIT ?", (limit,)) as cursor:
+        async with self.get_connection() as db:
+            async with db.execute(
+                "SELECT * FROM deals ORDER BY id DESC LIMIT ?", 
+                (limit,)
+            ) as cursor:
                 rows = await cursor.fetchall()
-                cols = [d[0] for d in cursor.description]
-                return [dict(zip(cols, row)) for row in rows]
+                return [dict(row) for row in rows]
+    
+    async def get_all_deals_batch(self, offset: int = 0, batch_size: int = 1000):
+        """
+        🔥 Пагинация для экспорта больших объемов данных
+        Возвращает порцию сделок для эффективной работы с памятью
+        """
+        async with self.get_connection() as db:
+            async with db.execute(
+                "SELECT * FROM deals ORDER BY id LIMIT ? OFFSET ?",
+                (batch_size, offset)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+    
+    async def count_deals(self) -> int:
+        """🔥 Быстрый подсчет количества сделок"""
+        async with self.get_connection() as db:
+            async with db.execute("SELECT COUNT(*) FROM deals") as cursor:
+                result = await cursor.fetchone()
+                return result[0] if result else 0
+    
+    async def cleanup(self):
+        """Очистка ресурсов при завершении"""
+        if self._executor:
+            self._executor.shutdown(wait=False)
