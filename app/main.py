@@ -90,8 +90,11 @@ async def startup_event():
     # 🔥 ВАЖНО: Вместо простой загрузки, мы пересчитываем позицию по истории сделок
     await state_service.recalculate_positions_from_history()
     
-    await cbr_service.get_rate("USD")
-    await cbr_service.get_rate("EUR")
+    # 🔥 Обновляем курсы ЦБ для всех поддерживаемых валютных пар
+    from app.core.currency_pairs import get_all_pair_symbols
+    for symbol in get_all_pair_symbols():
+        await cbr_service.get_rate(symbol)
+    
     print(f"✅ System Ready. Positions: {state_service.positions}")
 
 

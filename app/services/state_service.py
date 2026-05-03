@@ -5,14 +5,15 @@ from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from app.core.config import get_settings
+from app.core.currency_pairs import SUPPORTED_PAIRS
 
 class StateService:
     def __init__(self):
         self.settings = get_settings()
-        self.positions: dict[str, dict] = {
-            "USD/RUB": {"amount": 0.0, "avg_entry_price": 0.0},
-            "EUR/RUB": {"amount": 0.0, "avg_entry_price": 0.0}
-        }
+        # 🔥 Динамическая инициализация позиций на основе конфигурации валютных пар
+        self.positions: dict[str, dict] = {}
+        for pair in SUPPORTED_PAIRS.keys():
+            self.positions[pair] = {"amount": 0.0, "avg_entry_price": 0.0}
         self._db_pool: Optional[aiosqlite.Connection] = None
         self._executor = ThreadPoolExecutor(max_workers=4)
         self._lock = asyncio.Lock()

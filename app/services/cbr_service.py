@@ -1,16 +1,20 @@
 import httpx
 from datetime import datetime, timedelta
 from app.core.config import get_settings
+from app.core.currency_pairs import get_all_pair_symbols, SUPPORTED_PAIRS
 
 class CBRService:
     """Сервис для работы с курсами ЦБ РФ с кэшированием"""
     
     def __init__(self):
         self.settings = get_settings()
-        self._cache: dict[str, dict] = {
-            "USD/RUB": {"rate": 75.0, "updated": None},
-            "EUR/RUB": {"rate": 80.0, "updated": None}
-        }
+        # 🔥 Динамическая инициализация кэша на основе конфигурации валютных пар
+        self._cache: dict[str, dict] = {}
+        for pair, config in SUPPORTED_PAIRS.items():
+            symbol = config.get("symbol", pair.split("/")[0])
+            # Начальное значение (фолбэк) - можно загрузить из конфига при необходимости
+            default_rate = 75.0 if symbol == "USD" else (80.0 if symbol == "EUR" else 13.0)
+            self._cache[pair] = {"rate": default_rate, "updated": None}
     
     async def get_rate(self, currency: str) -> float | None:
         """Получить курс с кэшированием"""
@@ -47,6 +51,12 @@ class CBRService:
         except Exception:
             return None
     
-    def get_all_rates(self) -> dict[str, float]:
+    async def get_all_rates(self) -> dict[str, float]:
         """Вернуть все кэшированные курсы"""
         return {key: val["rate"] for key, val in self._cache.items()}
+    
+    async def refresh_all_rates(self):
+        """🔥 Обновить все курсы из API ЦБ для всех поддерживаемых валютных пар"""
+        for pair, config in SUPPORTED_PAIRS.items():
+            symbol = config.get("symbol", pair.split("/")[0])
+            await self.get_rate(symbol)

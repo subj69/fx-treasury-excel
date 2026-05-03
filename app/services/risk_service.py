@@ -1,5 +1,6 @@
 from typing import Literal
 from app.core.config import get_settings
+from app.core.currency_pairs import SUPPORTED_PAIRS, get_pair_limit
 
 PositionSide = Literal['BUY_FROM_CLIENT', 'SELL_TO_CLIENT']
 
@@ -7,12 +8,10 @@ class RiskService:
     """Проверки рисков и лимитов"""
     
     def __init__(self):
-        # 🔥 Важно: получаем settings через функцию, а не импортируем напрямую
-        settings = get_settings()
-        self.limits = {
-            "USD/RUB": settings.POSITION_LIMIT_USD,
-            "EUR/RUB": settings.POSITION_LIMIT_EUR
-        }
+        # 🔥 Динамическая инициализация лимитов на основе конфигурации валютных пар
+        self.limits = {}
+        for pair in SUPPORTED_PAIRS.keys():
+            self.limits[pair] = get_pair_limit(pair)
     
     def check_position_limit(self, pair: str, current_position: float, 
                             amount: float, side: PositionSide) -> dict:
