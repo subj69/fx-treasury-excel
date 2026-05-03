@@ -102,6 +102,11 @@ class StateService:
                         
                     elif side == 'SELL_TO_CLIENT':
                         self.positions[pair]["amount"] -= amount
+                        
+                except KeyError:
+                    # Пара не найдена в конфигурации - пропускаем с предупреждением
+                    print(f"⚠️  Warning: Unknown currency pair '{pair}' in deal history. Skipping...")
+                    continue
         
         # Сохраняем пересчитанное состояние в таблицу positions
         await self.save_positions_to_db()
