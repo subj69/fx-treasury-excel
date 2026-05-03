@@ -226,6 +226,12 @@
         }
         .status-connected { color: #a6e3a1; }
         .status-disconnected { color: #f38ba8; }
+        .btn-export {
+            background: #a6e3a1;
+        }
+        .btn-export:hover {
+            background: #98d493;
+        }
     </style>
 </head>
 <body>
@@ -234,6 +240,7 @@
         <div class="header-actions">
             <span id="connectionStatus" class="status-disconnected">● Отключено</span>
             <button class="btn-refresh" onclick="refreshRates()">🔄 Обновить курсы</button>
+            <button class="btn-refresh btn-export" onclick="exportDeals()">📥 Экспорт в Excel</button>
         </div>
     </div>
     
@@ -276,6 +283,7 @@
             <table class="log-table">
                 <thead>
                     <tr>
+                        <th>Дата</th>
                         <th>Время</th>
                         <th>Пара</th>
                         <th>Тип</th>
@@ -295,7 +303,10 @@
         // Глобальные переменные
         let cbrRates = {};
         let positions = {};
+        
+        // 🔥 WebSocket с параметром role=treasury
         const ws = new WebSocket(`ws://${window.location.host}/ws?role=treasury`);
+        console.log('🔌 Connecting to:', ws.url);
         
         // Статус соединения
         const statusEl = document.getElementById('connectionStatus');
@@ -322,33 +333,27 @@
             const data = JSON.parse(event.data);
             console.log(`Received: ${data.type}`, data);
             
-            // 🔥 Обработка инициализации - загружаем всё состояние
+            // Обработка инициализации
             if (data.type === 'init_state') {
                 console.log('📦 Loading initial state...');
                 
-                // Загружаем позиции
                 if (data.positions) {
                     positions = data.positions;
                     updatePositions(positions);
-                    console.log('Positions loaded:', positions);
                 }
                 
-                // Загружаем курсы ЦБ
                 if (data.cbr_rates) {
                     cbrRates = data.cbr_rates;
                     updateCBRRates();
-                    console.log('CBR rates loaded:', cbrRates);
                 }
                 
-                // Загружаем историю сделок
                 if (data.history && Array.isArray(data.history) && data.history.length > 0) {
                     console.log(`Loading ${data.history.length} historical deals`);
-                    // Очищаем таблицу перед загрузкой истории
                     document.getElementById('logTable').innerHTML = '';
-                    // Добавляем в обратном порядке (старые внизу)
                     data.history.slice().reverse().forEach(deal => {
                         addLogEntry({
                             time: formatTimestamp(deal.timestamp),
+                            timestamp: deal.timestamp,
                             pair: deal.pair,
                             amount: deal.amount,
                             price: deal.price,
@@ -361,7 +366,6 @@
                 return;
             }
             
-            // Обработка новой заявки
             if (data.type === 'incoming_rfq') {
                 cbrRates = data.cbr_rates || cbrRates;
                 updateCBRRates();
@@ -370,7 +374,6 @@
                 return;
             }
             
-            // Обработка обновления после сделки
             if (data.type === 'deal_update') {
                 if (data.positions) {
                     positions = data.positions;
@@ -381,18 +384,16 @@
                     updateCBRRates();
                 }
                 if (data.deal) {
-                    addLogEntry(data.deal, true); // true = добавить в начало
+                    addLogEntry(data.deal, true);
                 }
                 return;
             }
             
-            // Удаление карточки заявки
             if (data.type === 'rfq_processed' || data.type === 'rfq_quoted' || data.type === 'rfq_rejected') {
                 removeRFQCard(data.rfq_id);
                 return;
             }
             
-            // Обновление курсов
             if (data.type === 'rates_updated') {
                 if (data.cbr_rates) {
                     cbrRates = data.cbr_rates;
@@ -402,7 +403,7 @@
             }
         };
         
-        // 🔥 Функция обновления позиций
+        // Функция обновления позиций
         function updatePositions(pos) {
             if (!pos) return;
             
@@ -420,7 +421,7 @@
             }
         }
         
-        // 🔥 Функция обновления курсов ЦБ
+        // Функция обновления курсов ЦБ
         function updateCBRRates() {
             if (cbrRates['USD/RUB']) {
                 document.getElementById('cbrUsd').textContent = cbrRates['USD/RUB'].toFixed(4);
@@ -455,10 +456,8 @@
             card.className = 'rfq-card';
             card.id = `rfq-${rfq.rfq_id}`;
             
-            // Расчёт предложенной цены
             const suggestedPrice = rfq.cbr_rate * (rfq.side === 'SELL_TO_CLIENT' ? 1.005 : 0.995);
             
-            // Формирование предупреждения о рисках
             let warningHtml = '';
             if (rfq.risk_warning) {
                 warningHtml = `<div class="rfq-hint rfq-warning">⚠️ ${rfq.risk_warning}</div>`;
@@ -511,7 +510,6 @@
                 price: price
             }));
             
-            // Визуальная обратная связь
             priceInput.disabled = true;
             const btn = priceInput.parentElement.querySelector('.btn-send');
             btn.textContent = 'Отправлено ✓';
@@ -534,13 +532,34 @@
             const tbody = document.getElementById('logTable');
             const row = document.createElement('tr');
             
+            // 🔥 Парсим дату и время
+            let datePart = '—';
+            let timePart = deal.time || '—';
+            
+            if (deal.timestamp) {
+                try {
+                    const date = new Date(deal.timestamp);
+                    datePart = date.toLocaleDateString('ru-RU', { 
+                        day: '2-digit', month: '2-digit', year: '2-digit' 
+                    }).replace(/\//g, '.');
+                    timePart = date.toLocaleTimeString('ru-RU', {
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    });
+                } catch (e) {
+                    const [d, t] = deal.timestamp.split('T');
+                    datePart = d?.split('-')?.reverse()?.join('.') || '—';
+                    timePart = t?.split('.')[0] || '—';
+                }
+            }
+            
             const badgeClass = deal.side === 'SELL_TO_CLIENT' ? 'badge-buy' : 'badge-sell';
             const badgeText = deal.side === 'SELL_TO_CLIENT' ? 'ПРОДАЖА' : 'ПОКУПКА';
             const plColor = deal.pl >= 0 ? '#a6e3a1' : '#f38ba8';
             const plSign = deal.pl >= 0 ? '+' : '';
             
             row.innerHTML = `
-                <td>${deal.time}</td>
+                <td style="color: #89b4fa; font-weight: 500">${datePart}</td>
+                <td>${timePart}</td>
                 <td><strong>${deal.pair}</strong></td>
                 <td><span class="badge ${badgeClass}">${badgeText}</span></td>
                 <td>${Number(deal.amount).toLocaleString('ru-RU')}</td>
@@ -558,7 +577,7 @@
             }
         }
         
-        // Обновление курсов по кнопке
+        // 🔥 Обновление курсов по кнопке
         function refreshRates() {
             ws.send(JSON.stringify({ type: 'refresh_rates' }));
             const btn = document.querySelector('.btn-refresh');
@@ -571,7 +590,23 @@
             }, 2000);
         }
         
-        // Звуковое уведомление (простой beep)
+	// 🔥 Функция экспорта в Excel
+	function exportDeals() {
+	    const btn = event.target;
+	    const originalText = btn.textContent;
+	    
+	    btn.textContent = '⏳ Генерация...';
+	    btn.disabled = true;
+	    
+	    // 🔥 Открываем экспорт в XLSX формате
+	    window.open('/export/deals?format=xlsx', '_blank');
+	    
+	    setTimeout(() => {
+	        btn.textContent = originalText;
+	        btn.disabled = false;
+	    }, 2000);
+	}        
+        // Звуковое уведомление
         function playNotification() {
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -590,7 +625,6 @@
         
         // Горячие клавиши
         document.addEventListener('keydown', (e) => {
-            // Игнорируем, если фокус в поле ввода
             if (document.activeElement.tagName === 'INPUT') return;
             
             const activeCard = document.querySelector('.rfq-card:not([style*="opacity: 0"])');
@@ -609,23 +643,6 @@
                 refreshRates();
             }
         });
-        
-        // Авто-очистка старых заявок (> 5 минут)
-        setInterval(() => {
-            const now = Date.now();
-            document.querySelectorAll('.rfq-card').forEach(card => {
-                const timeEl = card.querySelector('.rfq-header span:last-child');
-                if (timeEl) {
-                    const [h, m, s] = timeEl.textContent.split(':').map(Number);
-                    const cardTime = new Date();
-                    cardTime.setHours(h, m, s);
-                    if (now - cardTime.getTime() > 5 * 60 * 1000) {
-                        card.style.opacity = '0.5';
-                        card.querySelector('.btn-send')?.setAttribute('disabled', 'true');
-                    }
-                }
-            });
-        }, 30000);
     </script>
 </body>
 </html>
