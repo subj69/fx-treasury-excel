@@ -1,0 +1,287 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Client - Запрос котировки</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 { 
+            color: #333; 
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        select, input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .quote-box {
+            margin-top: 25px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+        .quote-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .quote-price {
+            font-size: 42px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 15px 0;
+        }
+        .quote-details {
+            color: #888;
+            font-size: 13px;
+            margin: 10px 0;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn-accept {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            flex: 1;
+        }
+        .btn-reject {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            flex: 1;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>💱 FX Client</h1>
+        <p class="subtitle">Запросите котировку у казначея</p>
+        
+        <form id="rfqForm">
+            <div class="form-group">
+                <label for="pair">Валютная пара</label>
+                <select id="pair" required>
+                    <option value="USD/RUB">USD/RUB (Доллар/Рубль)</option>
+                    <option value="EUR/RUB">EUR/RUB (Евро/Рубль)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="side">Операция</label>
+                <select id="side" required>
+                    <option value="SELL_TO_CLIENT">Я покупаю валюту (Банк продаёт)</option>
+                    <option value="BUY_FROM_CLIENT">Я продаю валюту (Банк покупает)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="amount">Сумма (валюта)</label>
+                <input type="number" id="amount" min="100" max="1000000" 
+                       placeholder="Например: 1000" required>
+            </div>
+            
+            <button type="submit" id="submitBtn">
+                Запросить курс
+            </button>
+        </form>
+        
+        <div id="quoteBox" class="quote-box">
+            <div class="quote-label">Ваш курс предоставлен:</div>
+            <div class="quote-price" id="quotePrice">--</div>
+            <div class="quote-details" id="quoteDetails"></div>
+            
+            <div class="btn-group">
+                <button class="btn-reject" onclick="rejectQuote()">
+                    Отклонить
+                </button>
+                <button class="btn-accept" onclick="acceptQuote()">
+                    Согласен
+                </button>
+            </div>
+        </div>
+        
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        let currentQuote = null;
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        
+        ws.onopen = () => {
+            console.log('✅ WebSocket connected');
+            showStatus('Подключено к серверу', 'success');
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log('Received:', data);
+            
+            if (data.type === 'quote_response') {
+                showQuote(data);
+            } else if (data.type === 'deal_confirmed') {
+                showDealConfirmation(data);
+            } else if (data.type === 'error') {
+                showStatus(data.message, 'error');
+            }
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            showStatus('Ошибка подключения', 'error');
+        };
+        
+        document.getElementById('rfqForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const rfqData = {
+                type: 'new_rfq',
+                pair: document.getElementById('pair').value,
+                side: document.getElementById('side').value,
+                amount: parseFloat(document.getElementById('amount').value)
+            };
+            
+            console.log('Sending RFQ:', rfqData);
+            ws.send(JSON.stringify(rfqData));
+            
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('submitBtn').textContent = 'Ожидание ответа...';
+            showStatus('Запрос отправлен казначею...', 'success');
+        });
+        
+        function showQuote(data) {
+            currentQuote = data;
+            document.getElementById('quotePrice').textContent = data.price.toFixed(4);
+            document.getElementById('quoteDetails').textContent = 
+                `${data.pair} | ${data.side === 'SELL_TO_CLIENT' ? 'Покупка' : 'Продажа'} ${data.amount.toLocaleString()}`;
+            document.getElementById('quoteBox').style.display = 'block';
+            
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = 'Запросить курс';
+        }
+        
+        function acceptQuote() {
+            if (!currentQuote) return;
+            
+            ws.send(JSON.stringify({
+                type: 'accept_deal',
+                rfq_id: currentQuote.rfq_id,
+                pair: currentQuote.pair,
+                amount: currentQuote.amount,
+                price: currentQuote.price,
+                side: currentQuote.side
+            }));
+            
+            document.getElementById('quoteBox').style.display = 'none';
+            showStatus('Сделка выполняется...', 'success');
+        }
+        
+        function rejectQuote() {
+            if (!currentQuote) return;
+            
+            ws.send(JSON.stringify({
+                type: 'reject_quote',
+                rfq_id: currentQuote.rfq_id
+            }));
+            
+            document.getElementById('quoteBox').style.display = 'none';
+            currentQuote = null;
+            showStatus('Котировка отклонена', 'error');
+        }
+        
+        function showDealConfirmation(data) {
+            showStatus(`✅ Сделка совершена! P/L: ${data.pl.toFixed(2)} RUB`, 'success');
+            document.getElementById('quoteBox').style.display = 'none';
+            document.getElementById('rfqForm').reset();
+            currentQuote = null;
+        }
+        
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            setTimeout(() => {
+                statusEl.className = 'status';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

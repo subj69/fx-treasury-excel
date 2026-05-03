@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Treasury - Панель казначея</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #1e1e2e;
+            color: #cdd6f4;
+            min-height: 100vh;
+        }
+        .header {
+            background: #11111b;
+            padding: 20px 40px;
+            border-bottom: 2px solid #89b4fa;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            color: #89b4fa;
+            font-size: 24px;
+        }
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .btn-refresh {
+            padding: 8px 16px;
+            background: #89b4fa;
+            color: #11111b;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .btn-refresh:hover {
+            background: #b4befe;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-height: calc(100vh - 80px);
+        }
+        .panel {
+            background: #181825;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            border: 1px solid #313244;
+        }
+        .panel h2 {
+            color: #89b4fa;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #45475a;
+            font-size: 18px;
+        }
+        .cbr-rates {
+            background: #313244;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .cbr-rate-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #45475a;
+        }
+        .cbr-rate-item:last-child {
+            border-bottom: none;
+        }
+        .rate-value {
+            font-weight: bold;
+            color: #a6e3a1;
+        }
+        .rfq-card {
+            background: #313244;
+            border: 2px solid #45475a;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+            animation: slideIn 0.3s ease;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .rfq-card:hover {
+            border-color: #89b4fa;
+            transform: translateX(5px);
+        }
+        .rfq-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: #a6adc8;
+        }
+        .rfq-pair {
+            font-size: 20px;
+            font-weight: bold;
+            color: #f9e2af;
+            margin-bottom: 8px;
+        }
+        .rfq-details {
+            color: #bac2de;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .rfq-hint {
+            background: #11111b;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #6c7086;
+            margin-bottom: 10px;
+        }
+        .rfq-warning {
+            color: #f38ba8;
+            font-weight: 500;
+        }
+        .rfq-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .price-input {
+            flex: 1;
+            padding: 10px;
+            background: #11111b;
+            border: 2px solid #45475a;
+            color: #cdd6f4;
+            border-radius: 6px;
+            font-size: 16px;
+            text-align: right;
+        }
+        .price-input:focus {
+            outline: none;
+            border-color: #89b4fa;
+        }
+        .btn-send {
+            padding: 10px 20px;
+            background: #89b4fa;
+            color: #11111b;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .btn-send:hover {
+            background: #b4befe;
+        }
+        .position-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            background: #313244;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        .position-positive {
+            color: #a6e3a1;
+        }
+        .position-negative {
+            color: #f38ba8;
+        }
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .log-table th {
+            text-align: left;
+            padding: 10px;
+            background: #313244;
+            color: #89b4fa;
+            position: sticky;
+            top: 0;
+        }
+        .log-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #45475a;
+        }
+        .log-table tr:hover {
+            background: #313244;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .badge-buy {
+            background: #a6e3a1;
+            color: #11111b;
+        }
+        .badge-sell {
+            background: #f38ba8;
+            color: #11111b;
+        }
+        .empty-state {
+            text-align: center;
+            color: #6c7086;
+            padding: 40px;
+            font-style: italic;
+        }
+        .status-bar {
+            background: #11111b;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #a6adc8;
+            margin-bottom: 15px;
+        }
+        .status-connected { color: #a6e3a1; }
+        .status-disconnected { color: #f38ba8; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏦 FX Treasury - Панель управления</h1>
+        <div class="header-actions">
+            <span id="connectionStatus" class="status-disconnected">● Отключено</span>
+            <button class="btn-refresh" onclick="refreshRates()">🔄 Обновить курсы</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Левая панель -->
+        <div class="panel">
+            <h2>📊 Курсы ЦБ РФ</h2>
+            <div class="cbr-rates" id="cbrRates">
+                <div class="cbr-rate-item">
+                    <span>USD/RUB</span>
+                    <span class="rate-value" id="cbrUsd">--</span>
+                </div>
+                <div class="cbr-rate-item">
+                    <span>EUR/RUB</span>
+                    <span class="rate-value" id="cbrEur">--</span>
+                </div>
+            </div>
+            
+            <h2>📥 Входящие заявки (RFQ)</h2>
+            <div id="rfqList">
+                <div class="empty-state">Ожидание заявок...</div>
+            </div>
+            
+            <h2>📈 Позиции</h2>
+            <div id="positionsList">
+                <div class="position-item">
+                    <span>USD/RUB</span>
+                    <span id="posUsd" class="position-positive">0.00</span>
+                </div>
+                <div class="position-item">
+                    <span>EUR/RUB</span>
+                    <span id="posEur" class="position-positive">0.00</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Правая панель -->
+        <div class="panel">
+            <h2>📋 Журнал сделок</h2>
+            <table class="log-table">
+                <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>Пара</th>
+                        <th>Тип</th>
+                        <th>Объём</th>
+                        <th>Курс</th>
+                        <th>ЦБ</th>
+                        <th>P/L</th>
+                    </tr>
+                </thead>
+                <tbody id="logTable">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Глобальные переменные
+        let cbrRates = {};
+        let positions = {};
+        const ws = new WebSocket(`ws://${window.location.host}/ws?role=treasury`);
+        
+        // Статус соединения
+        const statusEl = document.getElementById('connectionStatus');
+        
+        ws.onopen = () => {
+            console.log('✅ Treasury WebSocket connected');
+            statusEl.textContent = '● Подключено';
+            statusEl.className = 'status-connected';
+        };
+        
+        ws.onclose = () => {
+            console.log('❌ Treasury WebSocket disconnected');
+            statusEl.textContent = '● Отключено';
+            statusEl.className = 'status-disconnected';
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            statusEl.textContent = '● Ошибка';
+            statusEl.className = 'status-disconnected';
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log(`Received: ${data.type}`, data);
+            
+            // 🔥 Обработка инициализации - загружаем всё состояние
+            if (data.type === 'init_state') {
+                console.log('📦 Loading initial state...');
+                
+                // Загружаем позиции
+                if (data.positions) {
+                    positions = data.positions;
+                    updatePositions(positions);
+                    console.log('Positions loaded:', positions);
+                }
+                
+                // Загружаем курсы ЦБ
+                if (data.cbr_rates) {
+                    cbrRates = data.cbr_rates;
+                    updateCBRRates();
+                    console.log('CBR rates loaded:', cbrRates);
+                }
+                
+                // Загружаем историю сделок
+                if (data.history && Array.isArray(data.history) && data.history.length > 0) {
+                    console.log(`Loading ${data.history.length} historical deals`);
+                    // Очищаем таблицу перед загрузкой истории
+                    document.getElementById('logTable').innerHTML = '';
+                    // Добавляем в обратном порядке (старые внизу)
+                    data.history.slice().reverse().forEach(deal => {
+                        addLogEntry({
+                            time: formatTimestamp(deal.timestamp),
+                            pair: deal.pair,
+                            amount: deal.amount,
+                            price: deal.price,
+                            side: deal.side,
+                            cbr: deal.cbr_rate,
+                            pl: deal.realized_pl
+                        }, false);
+                    });
+                }
+                return;
+            }
+            
+            // Обработка новой заявки
+            if (data.type === 'incoming_rfq') {
+                cbrRates = data.cbr_rates || cbrRates;
+                updateCBRRates();
+                addRfqCard(data);
+                playNotification();
+                return;
+            }
+            
+            // Обработка обновления после сделки
+            if (data.type === 'deal_update') {
+                if (data.positions) {
+                    positions = data.positions;
+                    updatePositions(positions);
+                }
+                if (data.cbr_rates) {
+                    cbrRates = data.cbr_rates;
+                    updateCBRRates();
+                }
+                if (data.deal) {
+                    addLogEntry(data.deal, true); // true = добавить в начало
+                }
+                return;
+            }
+            
+            // Удаление карточки заявки
+            if (data.type === 'rfq_processed' || data.type === 'rfq_quoted' || data.type === 'rfq_rejected') {
+                removeRFQCard(data.rfq_id);
+                return;
+            }
+            
+            // Обновление курсов
+            if (data.type === 'rates_updated') {
+                if (data.cbr_rates) {
+                    cbrRates = data.cbr_rates;
+                    updateCBRRates();
+                }
+                return;
+            }
+        };
+        
+        // 🔥 Функция обновления позиций
+        function updatePositions(pos) {
+            if (!pos) return;
+            
+            if (pos['USD/RUB']) {
+                const usdAmount = pos['USD/RUB'].amount;
+                const posUsd = document.getElementById('posUsd');
+                posUsd.textContent = usdAmount.toFixed(2);
+                posUsd.className = usdAmount >= 0 ? 'position-positive' : 'position-negative';
+            }
+            if (pos['EUR/RUB']) {
+                const eurAmount = pos['EUR/RUB'].amount;
+                const posEur = document.getElementById('posEur');
+                posEur.textContent = eurAmount.toFixed(2);
+                posEur.className = eurAmount >= 0 ? 'position-positive' : 'position-negative';
+            }
+        }
+        
+        // 🔥 Функция обновления курсов ЦБ
+        function updateCBRRates() {
+            if (cbrRates['USD/RUB']) {
+                document.getElementById('cbrUsd').textContent = cbrRates['USD/RUB'].toFixed(4);
+            }
+            if (cbrRates['EUR/RUB']) {
+                document.getElementById('cbrEur').textContent = cbrRates['EUR/RUB'].toFixed(4);
+            }
+        }
+        
+        // Форматирование времени из ISO
+        function formatTimestamp(isoString) {
+            if (!isoString) return new Date().toLocaleTimeString('ru-RU');
+            try {
+                const date = new Date(isoString);
+                return date.toLocaleTimeString('ru-RU', { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                });
+            } catch {
+                return isoString.split('T')[1]?.split('.')[0] || new Date().toLocaleTimeString('ru-RU');
+            }
+        }
+        
+        // Добавление карточки заявки
+        function addRfqCard(rfq) {
+            const list = document.getElementById('rfqList');
+            const emptyState = list.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            
+            const card = document.createElement('div');
+            card.className = 'rfq-card';
+            card.id = `rfq-${rfq.rfq_id}`;
+            
+            // Расчёт предложенной цены
+            const suggestedPrice = rfq.cbr_rate * (rfq.side === 'SELL_TO_CLIENT' ? 1.005 : 0.995);
+            
+            // Формирование предупреждения о рисках
+            let warningHtml = '';
+            if (rfq.risk_warning) {
+                warningHtml = `<div class="rfq-hint rfq-warning">⚠️ ${rfq.risk_warning}</div>`;
+            }
+            
+            card.innerHTML = `
+                <div class="rfq-header">
+                    <span>ID: ${rfq.rfq_id}</span>
+                    <span>${rfq.time}</span>
+                </div>
+                <div class="rfq-pair">${rfq.pair}</div>
+                <div class="rfq-details">
+                    ${rfq.side === 'SELL_TO_CLIENT' ? '🟢 Клиент покупает' : '🔴 Клиент продаёт'} | 
+                    Объём: ${Number(rfq.amount).toLocaleString('ru-RU')}
+                </div>
+                <div class="rfq-hint">
+                    Позиция: ${(rfq.current_pos?.amount || 0).toFixed(2)} | 
+                    ЦБ: ${rfq.cbr_rate?.toFixed(4) || '--'}
+                </div>
+                ${warningHtml}
+                <div class="rfq-actions">
+                    <input type="number" 
+                           class="price-input" 
+                           id="price-${rfq.rfq_id}" 
+                           placeholder="Курс" 
+                           step="0.0001"
+                           value="${suggestedPrice.toFixed(4)}">
+                    <button class="btn-send" onclick="sendQuote('${rfq.rfq_id}')">
+                        Отправить
+                    </button>
+                </div>
+            `;
+            
+            list.insertBefore(card, list.firstChild);
+        }
+        
+        // Отправка котировки
+        function sendQuote(rfqId) {
+            const priceInput = document.getElementById(`price-${rfqId}`);
+            const price = parseFloat(priceInput.value);
+            
+            if (!price || price <= 0) {
+                alert('Введите корректный курс');
+                return;
+            }
+            
+            ws.send(JSON.stringify({
+                type: 'treasury_answer',
+                rfq_id: rfqId,
+                price: price
+            }));
+            
+            // Визуальная обратная связь
+            priceInput.disabled = true;
+            const btn = priceInput.parentElement.querySelector('.btn-send');
+            btn.textContent = 'Отправлено ✓';
+            btn.style.background = '#a6e3a1';
+        }
+        
+        // Удаление карточки заявки
+        function removeRFQCard(rfqId) {
+            const card = document.getElementById(`rfq-${rfqId}`);
+            if (card) {
+                card.style.transition = 'opacity 0.3s, transform 0.3s';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(20px)';
+                setTimeout(() => card.remove(), 300);
+            }
+        }
+        
+        // Добавление записи в журнал
+        function addLogEntry(deal, prepend = true) {
+            const tbody = document.getElementById('logTable');
+            const row = document.createElement('tr');
+            
+            const badgeClass = deal.side === 'SELL_TO_CLIENT' ? 'badge-buy' : 'badge-sell';
+            const badgeText = deal.side === 'SELL_TO_CLIENT' ? 'ПРОДАЖА' : 'ПОКУПКА';
+            const plColor = deal.pl >= 0 ? '#a6e3a1' : '#f38ba8';
+            const plSign = deal.pl >= 0 ? '+' : '';
+            
+            row.innerHTML = `
+                <td>${deal.time}</td>
+                <td><strong>${deal.pair}</strong></td>
+                <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+                <td>${Number(deal.amount).toLocaleString('ru-RU')}</td>
+                <td>${deal.price?.toFixed(4) || '--'}</td>
+                <td style="color: #89b4fa">${deal.cbr?.toFixed(4) || '--'}</td>
+                <td style="color: ${plColor}; font-weight: bold">
+                    ${plSign}${deal.pl?.toFixed(2) || '0.00'}
+                </td>
+            `;
+            
+            if (prepend) {
+                tbody.insertBefore(row, tbody.firstChild);
+            } else {
+                tbody.appendChild(row);
+            }
+        }
+        
+        // Обновление курсов по кнопке
+        function refreshRates() {
+            ws.send(JSON.stringify({ type: 'refresh_rates' }));
+            const btn = document.querySelector('.btn-refresh');
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Обновление...';
+            btn.disabled = true;
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }, 2000);
+        }
+        
+        // Звуковое уведомление (простой beep)
+        function playNotification() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = 880;
+                gain.gain.value = 0.1;
+                osc.start();
+                setTimeout(() => { osc.stop(); ctx.close(); }, 150);
+            } catch (e) {
+                console.log('Audio notification skipped:', e);
+            }
+        }
+        
+        // Горячие клавиши
+        document.addEventListener('keydown', (e) => {
+            // Игнорируем, если фокус в поле ввода
+            if (document.activeElement.tagName === 'INPUT') return;
+            
+            const activeCard = document.querySelector('.rfq-card:not([style*="opacity: 0"])');
+            if (!activeCard) return;
+            
+            const rfqId = activeCard.id.replace('rfq-', '');
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendQuote(rfqId);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                ws.send(JSON.stringify({ type: 'reject_quote', rfq_id: rfqId }));
+            } else if (e.key.toLowerCase() === 'r') {
+                e.preventDefault();
+                refreshRates();
+            }
+        });
+        
+        // Авто-очистка старых заявок (> 5 минут)
+        setInterval(() => {
+            const now = Date.now();
+            document.querySelectorAll('.rfq-card').forEach(card => {
+                const timeEl = card.querySelector('.rfq-header span:last-child');
+                if (timeEl) {
+                    const [h, m, s] = timeEl.textContent.split(':').map(Number);
+                    const cardTime = new Date();
+                    cardTime.setHours(h, m, s);
+                    if (now - cardTime.getTime() > 5 * 60 * 1000) {
+                        card.style.opacity = '0.5';
+                        card.querySelector('.btn-send')?.setAttribute('disabled', 'true');
+                    }
+                }
+            });
+        }, 30000);
+    </script>
+</body>
+</html>
