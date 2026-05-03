@@ -140,9 +140,7 @@
             <div class="form-group">
                 <label for="pair">Валютная пара</label>
                 <select id="pair" required>
-                    <option value="USD/RUB">USD/RUB (Доллар/Рубль)</option>
-                    <option value="EUR/RUB">EUR/RUB (Евро/Рубль)</option>
-                    <option value="CNY/RUB">CNY/RUB (Юань/Рубль)</option>
+                    <!-- Заполняется динамически из API -->
                 </select>
             </div>
             
@@ -186,6 +184,30 @@
     <script>
         let currentQuote = null;
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        
+        // 🔥 Динамическая загрузка валютных пар из конфига
+        async function loadCurrencyPairs() {
+            try {
+                const response = await fetch('/api/currency-pairs');
+                const data = await response.json();
+                const select = document.getElementById('pair');
+                select.innerHTML = ''; // Очистить текущие опции
+                
+                for (const [pairKey, config] of Object.entries(data.pairs)) {
+                    const option = document.createElement('option');
+                    option.value = pairKey;
+                    option.textContent = `${pairKey} (${config.name})`;
+                    select.appendChild(option);
+                }
+                console.log('✅ Загружено валютных пар:', Object.keys(data.pairs).length);
+            } catch (error) {
+                console.error('❌ Ошибка загрузки валютных пар:', error);
+                showStatus('Ошибка загрузки списка валют', 'error');
+            }
+        }
+        
+        // Загрузить пары при старте
+        loadCurrencyPairs();
         
         ws.onopen = () => {
             console.log('✅ WebSocket connected');

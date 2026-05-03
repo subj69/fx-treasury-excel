@@ -1,9 +1,10 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from app.core.config import get_settings
 from app.core.security import verify_treasury_credentials
+from app.core.currency_pairs import get_all_pairs, get_pair_config
 from app.services.pricing_service import PricingService
 from app.services.risk_service import RiskService
 from app.services.state_service import StateService
@@ -108,6 +109,13 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     return HTMLResponse(get_cached_template("client.html"))
+
+@app.get("/api/currency-pairs")
+async def get_currency_pairs():
+    """API endpoint для получения списка всех валютных пар из конфига"""
+    pairs = get_all_pairs()
+    configs = {pair: get_pair_config(pair) for pair in pairs}
+    return JSONResponse(content={"pairs": configs})
 
 @app.get("/treasury")
 async def treasury_page(username: str = Depends(verify_treasury_credentials)):
