@@ -86,10 +86,10 @@ pending_rfqs = {}
 @app.on_event("startup")
 async def startup_event():
     print("🚀 Starting application...")
-    await state_service.init_db()
     
     # 🔥 ВАЖНО: Вместо простой загрузки, мы пересчитываем позицию по истории сделок
-    await state_service.recalculate_positions_from_history()
+    positions = await state_service.recalculate_positions()
+    state_service.positions = positions
     
     # 🔥 Обновляем курсы ЦБ для всех поддерживаемых валютных пар
     from app.core.currency_pairs import get_all_pair_symbols
