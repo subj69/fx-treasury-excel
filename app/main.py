@@ -166,7 +166,7 @@ async def _export_xlsx_optimized(total_deals: int, chunk_size: int):
     # Заголовки
     headers = [
         "ID", "Дата", "Время", "Пара", "Тип операции", 
-        "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)"
+        "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)", "Клиент"
     ]
     ws.append(headers)
     
@@ -203,6 +203,7 @@ async def _export_xlsx_optimized(total_deals: int, chunk_size: int):
             side_ru = "ПРОДАЖА клиенту" if side_raw == 'SELL_TO_CLIENT' else "ПОКУПКА у клиента"
             
             pl_value = deal.get('realized_pl', 0)
+            client_name = deal.get('client_name', 'Аноним')
             
             ws.append([
                 deal.get('id', ''),
@@ -213,7 +214,8 @@ async def _export_xlsx_optimized(total_deals: int, chunk_size: int):
                 deal.get('amount', 0),
                 deal.get('price', 0),
                 deal.get('cbr_rate', 0),
-                pl_value
+                pl_value,
+                client_name
             ])
             
             # Цветовая индикация P/L
@@ -263,7 +265,7 @@ async def _export_csv_optimized(total_deals: int, chunk_size: int):
     writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
     writer.writerow([
         "ID", "Дата", "Время", "Пара", "Тип операции", 
-        "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)"
+        "Объём", "Курс сделки", "Курс ЦБ", "P/L (RUB)", "Клиент"
     ])
     
     offset = 0
@@ -283,6 +285,7 @@ async def _export_csv_optimized(total_deals: int, chunk_size: int):
             
             side_raw = deal.get('side', '')
             side_ru = "ПРОДАЖА клиенту" if side_raw == 'SELL_TO_CLIENT' else "ПОКУПКА у клиента"
+            client_name = deal.get('client_name', 'Аноним')
             
             writer.writerow([
                 deal.get('id', ''),
@@ -293,7 +296,8 @@ async def _export_csv_optimized(total_deals: int, chunk_size: int):
                 f"{deal.get('amount', 0):.2f}",
                 f"{deal.get('price', 0):.4f}",
                 f"{deal.get('cbr_rate', 0):.4f}",
-                f"{deal.get('realized_pl', 0):.2f}"
+                f"{deal.get('realized_pl', 0):.2f}",
+                client_name
             ])
         
         offset += chunk_size
