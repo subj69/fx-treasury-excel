@@ -9,13 +9,12 @@ from app.core.currency_pairs import SUPPORTED_PAIRS
 class StateService:
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # ���������� ���������� ���� ������������ ����� �������
             base_dir = Path(__file__).parent.parent.parent
             db_path = base_dir / "data" / "treasury.db"
-            # ������ ���������� data, ���� ��� �� ����������
             os.makedirs(base_dir / "data", exist_ok=True)
         self.db_path = str(db_path)
         self.cbr_service = CBRService()
+        self.positions = {}
         self._init_db()
 
     def _init_db(self):
@@ -32,7 +31,7 @@ class StateService:
                 rate REAL NOT NULL,
                 cbr_rate REAL NOT NULL,
                 pl REAL NOT NULL,
-                client_name TEXT DEFAULT '����������� ������'
+                client_name TEXT DEFAULT 'Anonymous Client'
             )
         """)
         
@@ -57,20 +56,20 @@ class StateService:
             if pair not in positions:
                 positions[pair] = {"amount": 0.0, "avg_entry_price": 0.0}
                 
-            if deal_type == "�������":
+            if deal_type == "BUY":
                 old_amount = positions[pair]["amount"]
                 old_avg = positions[pair]["avg_entry_price"]
                 new_amount = old_amount + amount
                 if new_amount != 0:
                     positions[pair]["avg_entry_price"] = ((old_amount * old_avg) + (amount * rate)) / new_amount
                 positions[pair]["amount"] = new_amount
-            else:  # �������
+            else:  # SELL
                 positions[pair]["amount"] -= amount
                 
         conn.close()
         return positions
 
-    def save_deal(self, pair: str, deal_type: str, amount: float, rate: float, cbr_rate: float, client_name: str = "����������� ������") -> int:
+    def save_deal(self, pair: str, deal_type: str, amount: float, rate: float, cbr_rate: float, client_name: str = "Anonymous Client") -> int:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -111,7 +110,7 @@ class StateService:
                 "time": time_part,
                 "pair": row['currency_pair'],
                 "type": row['deal_type'],
-                "client_name": row['client_name'] or "����������� ������",
+                "client_name": row['client_name'] or "Anonymous Client",
                 "amount": row['amount'],
                 "rate": row['rate'],
                 "cbr_rate": row['cbr_rate'],
@@ -122,18 +121,15 @@ class StateService:
         return deals
 
     def _calculate_pl(self, pair: str, deal_type: str, amount: float, rate: float, cbr_rate: float) -> float:
-        if deal_type == "�������":
+        if deal_type == "BUY":
             return (cbr_rate - rate) * amount
         else:
             return (rate - cbr_rate) * amount
 
     def save_positions_to_db(self):
-        """��������� ������� ������� � �� (��� ������������� ��� shutdown)"""
-        pass  # ������� ��������������� �� ������� ������, ����� ���������� �� ���������
-
+        pass
 
     def update_position(self, pair: str, amount: float, side: str, price: float):
-        '''��������� ������� �� �������� ����'''
         if pair not in self.positions:
             self.positions[pair] = {'amount': 0.0, 'avg_entry_price': 0.0}
         
@@ -143,22 +139,20 @@ class StateService:
             if new_amount != 0:
                 pos['avg_entry_price'] = ((pos['amount'] * pos['avg_entry_price']) + (amount * price)) / new_amount
             pos['amount'] = new_amount
-        else:  # sell
+        else:
             new_amount = pos['amount'] - amount
             if new_amount != 0:
                 pos['avg_entry_price'] = ((pos['amount'] * pos['avg_entry_price']) - (amount * price)) / abs(new_amount)
             pos['amount'] = new_amount
         
-        # ��������� ����������� �������
         self.save_positions_to_db()
 
     def cleanup(self):
-        '''������� �������� ����� ���������'''
         self.save_positions_to_db()
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
+    
     async def count_deals(self) -> int:
-        '''Возвращает общее количество сделок в БД'''
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -167,5 +161,33 @@ class StateService:
             conn.close()
             return result
         except Exception as e:
-            print(f"❌ Error counting deals: {e}")
+            print(f"Error counting deals: {e}")
             return 0
+
+    async def get_all_deals_batch(self, offset: int = 0, batch_size: int = 1000) -> List[Dict[str, Any]]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, timestamp, currency_pair, deal_type, amount, rate, cbr_rate, pl, client_name
+            FROM deals 
+            ORDER BY timestamp
+            LIMIT ? OFFSET ?
+        """, (batch_size, offset))
+        
+        deals = []
+        for row in cursor.fetchall():
+            deals.append({
+                "id": row['id'],
+                "timestamp": row['timestamp'].replace(' ', 'T'),
+                "pair": row['currency_pair'],
+                "side": "SELL_TO_CLIENT" if row['deal_type'] == "SELL" else "BUY_FROM_CLIENT",
+                "amount": row['amount'],
+                "price": row['rate'],
+                "cbr_rate": row['cbr_rate'],
+                "realized_pl": row['pl']
+            })
+        
+        conn.close()
+        return deals

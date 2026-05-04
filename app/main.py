@@ -27,7 +27,7 @@ cbr_service = CBRService()
 @lru_cache(maxsize=2)
 def get_cached_template(template_name: str) -> str:
     """Кэширует HTML шаблоны в памяти"""
-    with open(f"app/templates/{template_name}", encoding="utf-8") as f:
+    with open(Path(__file__).parent / "templates" / template_name, encoding="utf-8") as f:
         return f.read()
 
 app = FastAPI(title="FX Treasury System", version="0.1.0")
@@ -412,7 +412,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 pl = pricing_service.calculate_deal_pl(amount, price, cbr_rate, side)
                 
                 state_service.update_position(pair, amount, side, price)
-                await state_service.save_deal(pair, amount, price, side, cbr_rate, pl, client_name)
+                state_service.save_deal(pair, "BUY" if side == "buy" else "SELL", amount, price, cbr_rate, client_name)
                 state_service.save_positions_to_db()  # 🔥 Сохраняем сразу
                 
                 if data.get('rfq_id') in pending_rfqs:
@@ -454,4 +454,4 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
+    uvicorn.run("app.main:app", host=getattr(settings, "HOST", "0.0.0.0"), port=getattr(settings, "PORT", 8000), reload=True)
