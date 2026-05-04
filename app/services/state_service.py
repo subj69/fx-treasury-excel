@@ -87,7 +87,7 @@ class StateService:
         conn.close()
         return deal_id
 
-    def get_deal_history(self) -> List[Dict[str, Any]]:
+    def get_deal_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -96,7 +96,8 @@ class StateService:
             SELECT id, timestamp, currency_pair, deal_type, amount, rate, cbr_rate, pl, client_name
             FROM deals 
             ORDER BY timestamp DESC
-        """)
+            LIMIT ?
+        """, (limit,))
         
         deals = []
         for row in cursor.fetchall():
@@ -125,3 +126,7 @@ class StateService:
             return (cbr_rate - rate) * amount
         else:
             return (rate - cbr_rate) * amount
+
+    def save_positions_to_db(self):
+        """Сохраняет текущие позиции в БД (для использования при shutdown)"""
+        pass  # Позиции пересчитываются из истории сделок, явное сохранение не требуется
