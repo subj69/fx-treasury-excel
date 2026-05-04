@@ -1,4 +1,4 @@
-п»їimport sqlite3
+import sqlite3
 import os
 from pathlib import Path
 from datetime import datetime
@@ -9,10 +9,10 @@ from app.core.currency_pairs import SUPPORTED_PAIRS
 class StateService:
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # РСЃРїРѕР»СЊР·СѓРµРј Р°Р±СЃРѕР»СЋС‚РЅС‹Р№ РїСѓС‚СЊ РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ РєРѕСЂРЅСЏ РїСЂРѕРµРєС‚Р°
+            # Используем абсолютный путь относительно корня проекта
             base_dir = Path(__file__).parent.parent.parent
             db_path = base_dir / "data" / "treasury.db"
-            # РЎРѕР·РґР°С‘Рј РґРёСЂРµРєС‚РѕСЂРёСЋ data, РµСЃР»Рё РѕРЅР° РЅРµ СЃСѓС‰РµСЃС‚РІСѓРµС‚
+            # Создаём директорию data, если она не существует
             os.makedirs(base_dir / "data", exist_ok=True)
         self.db_path = str(db_path)
         self.cbr_service = CBRService()
@@ -32,7 +32,7 @@ class StateService:
                 rate REAL NOT NULL,
                 cbr_rate REAL NOT NULL,
                 pl REAL NOT NULL,
-                client_name TEXT DEFAULT 'РќРµРёР·РІРµСЃС‚РЅС‹Р№ РєР»РёРµРЅС‚'
+                client_name TEXT DEFAULT 'Неизвестный клиент'
             )
         """)
         
@@ -57,20 +57,20 @@ class StateService:
             if pair not in positions:
                 positions[pair] = {"amount": 0.0, "avg_entry_price": 0.0}
                 
-            if deal_type == "РџРћРљРЈРџРљРђ":
+            if deal_type == "ПОКУПКА":
                 old_amount = positions[pair]["amount"]
                 old_avg = positions[pair]["avg_entry_price"]
                 new_amount = old_amount + amount
                 if new_amount != 0:
                     positions[pair]["avg_entry_price"] = ((old_amount * old_avg) + (amount * rate)) / new_amount
                 positions[pair]["amount"] = new_amount
-            else:  # РџР РћР”РђР–Рђ
+            else:  # ПРОДАЖА
                 positions[pair]["amount"] -= amount
                 
         conn.close()
         return positions
 
-    def save_deal(self, pair: str, deal_type: str, amount: float, rate: float, cbr_rate: float, client_name: str = "РќРµРёР·РІРµСЃС‚РЅС‹Р№ РєР»РёРµРЅС‚") -> int:
+    def save_deal(self, pair: str, deal_type: str, amount: float, rate: float, cbr_rate: float, client_name: str = "Неизвестный клиент") -> int:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -111,7 +111,7 @@ class StateService:
                 "time": time_part,
                 "pair": row['currency_pair'],
                 "type": row['deal_type'],
-                "client_name": row['client_name'] or "РќРµРёР·РІРµСЃС‚РЅС‹Р№ РєР»РёРµРЅС‚",
+                "client_name": row['client_name'] or "Неизвестный клиент",
                 "amount": row['amount'],
                 "rate": row['rate'],
                 "cbr_rate": row['cbr_rate'],
@@ -122,11 +122,38 @@ class StateService:
         return deals
 
     def _calculate_pl(self, pair: str, deal_type: str, amount: float, rate: float, cbr_rate: float) -> float:
-        if deal_type == "РџРћРљРЈРџРљРђ":
+        if deal_type == "ПОКУПКА":
             return (cbr_rate - rate) * amount
         else:
             return (rate - cbr_rate) * amount
 
     def save_positions_to_db(self):
-        """РЎРѕС…СЂР°РЅСЏРµС‚ С‚РµРєСѓС‰РёРµ РїРѕР·РёС†РёРё РІ Р‘Р” (РґР»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ РїСЂРё shutdown)"""
-        pass  # РџРѕР·РёС†РёРё РїРµСЂРµСЃС‡РёС‚С‹РІР°СЋС‚СЃСЏ РёР· РёСЃС‚РѕСЂРёРё СЃРґРµР»РѕРє, СЏРІРЅРѕРµ СЃРѕС…СЂР°РЅРµРЅРёРµ РЅРµ С‚СЂРµР±СѓРµС‚СЃСЏ
+        """Сохраняет текущие позиции в БД (для использования при shutdown)"""
+        pass  # Позиции пересчитываются из истории сделок, явное сохранение не требуется
+
+
+    def update_position(self, pair: str, amount: float, side: str, price: float):
+        '''Обновляет позицию по валютной паре'''
+        if pair not in self.positions:
+            self.positions[pair] = {'amount': 0.0, 'avg_entry_price': 0.0}
+        
+        pos = self.positions[pair]
+        if side == 'buy':
+            new_amount = pos['amount'] + amount
+            if new_amount != 0:
+                pos['avg_entry_price'] = ((pos['amount'] * pos['avg_entry_price']) + (amount * price)) / new_amount
+            pos['amount'] = new_amount
+        else:  # sell
+            new_amount = pos['amount'] - amount
+            if new_amount != 0:
+                pos['avg_entry_price'] = ((pos['amount'] * pos['avg_entry_price']) - (amount * price)) / abs(new_amount)
+            pos['amount'] = new_amount
+        
+        # Сохраняем обновленные позиции
+        self._save_positions()
+
+    def cleanup(self):
+        '''Очистка ресурсов перед закрытием'''
+        self._save_positions()
+        if hasattr(self, 'conn') and self.conn:
+            self.conn.close()
