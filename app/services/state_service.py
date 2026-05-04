@@ -186,7 +186,8 @@ class StateService:
                 "amount": row['amount'],
                 "price": row['rate'],
                 "cbr_rate": row['cbr_rate'],
-                "realized_pl": row['pl']
+                "realized_pl": row['pl'],
+                "client_name": row['client_name'] or "Anonymous Client"
             })
         
         conn.close()
