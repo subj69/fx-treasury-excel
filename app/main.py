@@ -410,14 +410,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 pair = data['pair']
                 amount = float(data['amount'])
                 price = float(data['price'])
-                side = data['side']
+                side = data['side']  # SELL_TO_CLIENT или BUY_FROM_CLIENT
                 client_name = data.get('client_name', 'Неизвестный клиент')
+                
+                # Конвертируем формат стороны сделки
+                deal_type = "BUY" if side == "BUY_FROM_CLIENT" else "SELL"
                 
                 cbr_rate = await cbr_service.get_rate(pair.replace('/RUB', '')) or 0
                 pl = pricing_service.calculate_deal_pl(amount, price, cbr_rate, side)
                 
-                state_service.update_position(pair, amount, side, price)
-                state_service.save_deal(pair, "BUY" if side == "buy" else "SELL", amount, price, cbr_rate, client_name)
+                state_service.update_position(pair, amount, side.lower(), price)
+                state_service.save_deal(pair, deal_type, amount, price, cbr_rate, client_name)
                 state_service.save_positions_to_db()  # 🔥 Сохраняем сразу
                 
                 if data.get('rfq_id') in pending_rfqs:
