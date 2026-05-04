@@ -104,7 +104,7 @@ async def startup_event():
 async def shutdown_event():
     print("💾 Saving positions before shutdown...")
     state_service.save_positions_to_db()
-    await state_service.cleanup()
+    state_service.cleanup()
 
 @app.get("/")
 async def root():
