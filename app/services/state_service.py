@@ -157,3 +157,15 @@ class StateService:
         self.save_positions_to_db()
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
+    async def count_deals(self) -> int:
+        '''Возвращает общее количество сделок в БД'''
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM deals")
+            result = cursor.fetchone()[0]
+            conn.close()
+            return result
+        except Exception as e:
+            print(f"❌ Error counting deals: {e}")
+            return 0
