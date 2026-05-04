@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPExcept
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+from pathlib import Path
 from app.core.config import get_settings
 from app.core.security import verify_treasury_credentials
 from app.core.currency_pairs import get_all_pairs, get_pair_config
