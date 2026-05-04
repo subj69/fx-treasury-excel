@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.services.cbr_service import CBRService
-from app.config.currency_pairs import CURRENCY_PAIRS
+from app.core.currency_pairs import SUPPORTED_PAIRS
 
 class StateService:
     def __init__(self, db_path: str = "app/data/treasury.db"):
@@ -39,7 +39,7 @@ class StateService:
         cursor = conn.cursor()
         
         positions = {}
-        for pair in CURRENCY_PAIRS:
+        for pair in SUPPORTED_PAIRS:
             positions[pair] = {"amount": 0.0, "avg_entry_price": 0.0}
             
         cursor.execute("SELECT currency_pair, deal_type, amount, rate FROM deals ORDER BY timestamp")
