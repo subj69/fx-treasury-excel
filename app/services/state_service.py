@@ -150,10 +150,10 @@ class StateService:
             pos['amount'] = new_amount
         
         # ��������� ����������� �������
-        self._save_positions()
+        self.save_positions_to_db()
 
     def cleanup(self):
         '''������� �������� ����� ���������'''
-        self._save_positions()
+        self.save_positions_to_db()
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
