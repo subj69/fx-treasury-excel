@@ -1,12 +1,20 @@
 ﻿import sqlite3
+import os
+from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.services.cbr_service import CBRService
 from app.core.currency_pairs import SUPPORTED_PAIRS
 
 class StateService:
-    def __init__(self, db_path: str = "app/data/treasury.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            # Используем абсолютный путь относительно корня проекта
+            base_dir = Path(__file__).parent.parent.parent
+            db_path = base_dir / "data" / "treasury.db"
+            # Создаём директорию data, если она не существует
+            os.makedirs(base_dir / "data", exist_ok=True)
+        self.db_path = str(db_path)
         self.cbr_service = CBRService()
         self._init_db()
 
